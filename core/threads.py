@@ -2,47 +2,48 @@ import os
 import traceback
 from concurrent.futures import ThreadPoolExecutor, Future
 
+
+def resolve_thread_count(performance_mode: str, override: int | None):
+    cpu = os.cpu_count() or 8
+
+    if override:
+        return int(override)
+
+    if performance_mode == "safe":
+        return max(1, cpu // 4)
+
+    if performance_mode == "balanced":
+        return max(2, cpu // 2)
+
+    if performance_mode == "max":
+        return cpu
+
+    return max(2, cpu // 2)
+
+
 class ConversionThreadPool:
-    """
-    ONE clean threadpool implementation.
-    - Stable job execution
-    - No swallowed exceptions
-    - No duplicate definitions
-    """
 
     def __init__(self, performance_mode="balanced", threads_override=None):
-        cpu = os.cpu_count() or 8
 
-        if threads_override:
-            workers = int(threads_override)
-        else:
-            if performance_mode == "safe":
-                workers = max(1, cpu // 4)
-            elif performance_mode == "balanced":
-                workers = max(2, cpu // 2)
-            elif performance_mode == "max":
-                workers = cpu
-            else:
-                workers = max(2, cpu // 2)
+        self.max_workers = resolve_thread_count(performance_mode, threads_override)
 
-        self.workers = workers
+        print(f"[ThreadPool] Starting with {self.max_workers} workers")
 
-        print(f"[ThreadPool] Starting with {self.workers} workers")
-
-        # SINGLE executor used everywhere
         self.executor = ThreadPoolExecutor(
-            max_workers=self.workers,
+            max_workers=self.max_workers,
             thread_name_prefix="vibes_worker"
         )
 
     # -----------------------------------------------------------
     def submit(self, fn, *args, **kwargs) -> Future:
-        """Submit a job with crash reporting."""
+        """Submit job with full crash reporting."""
+
         def wrapper():
             try:
                 return fn(*args, **kwargs)
-            except Exception:
-                print("\n[THREAD ERROR]")
+            except Exception as e:
+                print("\n\n[THREAD ERROR]")
+                print(e)
                 traceback.print_exc()
                 return None
 
@@ -50,12 +51,7 @@ class ConversionThreadPool:
 
     # -----------------------------------------------------------
     def shutdown(self):
-        """Stop accepting new jobs and cancel remaining."""
         try:
-            self.executor.shutdown(
-                wait=False,
-                cancel_futures=True
-            )
-            print("[ThreadPool] Shutdown complete")
+            self.executor.shutdown(wait=False, cancel_futures=True)
         except Exception:
-            traceback.print_exc()
+            pass

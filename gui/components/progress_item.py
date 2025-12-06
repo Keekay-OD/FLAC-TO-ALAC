@@ -11,6 +11,7 @@ class ProgressItem(QWidget):
         super().__init__()
 
         self.file_path = file_path
+        self.status = "Queued"   # <—— REAL STATUS ATTRIBUTE HERE
 
         self.setStyleSheet("""
             QWidget {
@@ -41,44 +42,41 @@ class ProgressItem(QWidget):
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(4)
 
-        # -------------------------------
-        # Top Row: Filename + Status
-        # -------------------------------
-        top_row = QHBoxLayout()
+        # top row
+        top = QHBoxLayout()
 
         self.lbl_name = QLabel(file_path)
         self.lbl_name.setStyleSheet("font-weight: bold; color: white;")
 
-        self.lbl_status = QLabel("Queued")
-        self.lbl_status.setStyleSheet("color: #959ba0;")
+        self.lbl_status = QLabel(self.status)
+        self.lbl_status.setStyleSheet("color: #959ba0; font-weight: bold;")
 
-        top_row.addWidget(self.lbl_name)
-        top_row.addStretch()
-        top_row.addWidget(self.lbl_status)
+        top.addWidget(self.lbl_name)
+        top.addStretch()
+        top.addWidget(self.lbl_status)
 
-        # -------------------------------
-        # Progress Bar
-        # -------------------------------
+        # progress
         self.progress = QProgressBar()
         self.progress.setValue(0)
 
-        # Divider line
+        # divider
         line = QFrame()
         line.setObjectName("line")
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFrameShadow(QFrame.Shadow.Sunken)
 
-        # Layout assembly
-        root.addLayout(top_row)
+        root.addLayout(top)
         root.addWidget(self.progress)
         root.addWidget(line)
 
         self.setLayout(root)
 
-    # ------------------------------------------------------
-    # Update Status Label (Discord styling)
-    # ------------------------------------------------------
+    # ---------------------------------------------
+    # UPDATE STATUS + STORE TO .status
+    # ---------------------------------------------
     def update_status(self, status: str):
+
+        self.status = status   # <—— THIS WAS MISSING
 
         colors = {
             "Queued": "#959ba0",
@@ -91,4 +89,6 @@ class ProgressItem(QWidget):
         color = colors.get(status, "white")
 
         self.lbl_status.setText(status)
-        self.lbl_status.setStyleSheet(f"color: {color}; font-weight: bold;")
+        self.lbl_status.setStyleSheet(
+            f"color: {color}; font-weight: bold;"
+        )
