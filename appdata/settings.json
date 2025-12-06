@@ -1,5 +1,13 @@
 {
-    "delete_originals": false,
+    "delete_originals": true,
     "performance_mode": "balanced",
-    "threads_override": null
+    "threads_override": null,
+    "watched_folders": [],
+    "dark_mode": true,
+    "folders": [
+        "X:\\MediaFolder\\Music\\Megadeth - Countdown To Extinction (1992 Mix Remaster) (2023) [24Bit-192kHz] FLAC [PMEDIA] \u2b50\ufe0f"
+    ],
+    "last_folders": [
+        "X:\\MediaFolder\\Music\\Megadeth - Countdown To Extinction (1992 Mix Remaster) (2023) [24Bit-192kHz] FLAC [PMEDIA] \u2b50\ufe0f"
+    ]
 }

@@ -3,6 +3,9 @@ from PyQt6.QtWidgets import (
     QComboBox, QSpinBox, QPushButton, QMessageBox, QHBoxLayout
 )
 from PyQt6.QtCore import Qt
+import json
+
+from utils.paths import SETTINGS_FILE
 
 
 class SettingsTab(QWidget):
@@ -78,7 +81,7 @@ class SettingsTab(QWidget):
     # SAVE SETTINGS
     # ==============================================================
     def save_settings(self):
-
+        # Update settings dict from UI
         self.settings["delete_originals"] = self.chk_delete.isChecked()
         self.settings["performance_mode"] = self.combo_perf.currentText()
 
@@ -86,6 +89,9 @@ class SettingsTab(QWidget):
             self.settings["threads_override"] = self.spin_threads.value()
         else:
             self.settings["threads_override"] = None
+
+        # Write to disk
+        SETTINGS_FILE.write_text(json.dumps(self.settings, indent=4))
 
         QMessageBox.information(self, "Settings Saved", "Settings have been updated.")
         print("Settings updated ->", self.settings)

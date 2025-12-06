@@ -25,47 +25,48 @@ class HistoryRow(QWidget):
         self.setFixedHeight(55)
 
         layout = QHBoxLayout()
-        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setContentsMargins(12, 6, 12, 6)
         layout.setSpacing(12)
 
         # Thumbnail placeholder
         thumb = QLabel()
         thumb.setFixedSize(40, 40)
-        thumb.setStyleSheet("background-color: #333; border-radius: 6px;")
+        thumb.setStyleSheet("background-color: #3A3A3A; border-radius: 6px;")
         layout.addWidget(thumb)
 
-        # Title + artist
+        # Only show filename (no album, no artist)
         text_col = QVBoxLayout()
-        title = QLabel(os.path.basename(record["flac"]))
-        title.setStyleSheet(f"color: {TEXT}; font-size: 15px; font-weight: bold;")
 
-        sub = QLabel(f"{record['artist']} — {record['album']}")
-        sub.setStyleSheet(f"color: {SUBTEXT}; font-size: 13px;")
+        title = QLabel(os.path.basename(record["flac"]))
+        title.setStyleSheet("""
+            color: #FFFFFF;
+            font-size: 15px;
+            font-weight: bold;
+        """)
 
         text_col.addWidget(title)
-        text_col.addWidget(sub)
-        layout.addLayout(text_col, 2)
+        layout.addLayout(text_col, 3)
 
         # Size info
         before_mb = record["size_before"] / (1024 * 1024)
         after_mb = record["size_after"] / (1024 * 1024)
 
         size_label = QLabel(f"{before_mb:.1f} → {after_mb:.1f} MB")
-        size_label.setStyleSheet(f"color: {TEXT}; font-size: 13px;")
+        size_label.setStyleSheet("color: #CCCCCC; font-size: 13px;")
         layout.addWidget(size_label)
 
         # Date
         date_label = QLabel(record["date"])
-        date_label.setStyleSheet(f"color: {SUBTEXT}; font-size: 12px;")
+        date_label.setStyleSheet("color: #999999; font-size: 12px;")
         layout.addWidget(date_label)
 
-        # Delete
+        # Delete button
         btn_delete = QPushButton("✕")
-        btn_delete.setFixedWidth(30)
+        btn_delete.setFixedWidth(32)
         btn_delete.clicked.connect(lambda: delete_callback(record["id"]))
         btn_delete.setStyleSheet("""
             QPushButton {
-                background: #992222;
+                background: #AA2222;
                 color: white;
                 font-size: 15px;
                 border-radius: 5px;
@@ -75,22 +76,22 @@ class HistoryRow(QWidget):
         """)
         layout.addWidget(btn_delete)
 
-        # Progress bar
+        # Progress bar (small underline)
         self.progress = QProgressBar()
-        self.progress.setFixedHeight(6)
+        self.progress.setFixedHeight(5)
         self.progress.setRange(0, 100)
         self.progress.setValue(100)
         self.progress.setTextVisible(False)
-        self.progress.setStyleSheet(f"""
-            QProgressBar {{
+        self.progress.setStyleSheet("""
+            QProgressBar {
                 background: #333;
                 border: none;
                 border-radius: 3px;
-            }}
-            QProgressBar::chunk {{
-                background-color: {SPOTIFY_GREEN};
+            }
+            QProgressBar::chunk {
+                background-color: #1DB954;
                 border-radius: 3px;
-            }}
+            }
         """)
 
         root = QVBoxLayout()
@@ -98,15 +99,15 @@ class HistoryRow(QWidget):
         root.addWidget(self.progress)
 
         self.setLayout(root)
-        self.setStyleSheet(f"background-color: {ROW_BG}; border-radius: 6px;")
+        self.setStyleSheet("background-color: #1E1E1E; border-radius: 6px;")
 
     def set_progress(self, value):
         self.progress.setValue(value)
 
     def enterEvent(self, event):
-        self.setStyleSheet(f"background-color: {ROW_HOVER}; border-radius: 6px;")
+        self.setStyleSheet("background-color: #2A2A2A; border-radius: 6px;")
     def leaveEvent(self, event):
-        self.setStyleSheet(f"background-color: {ROW_BG}; border-radius: 6px;")
+        self.setStyleSheet("background-color: #1E1E1E; border-radius: 6px;")
 
 
 class HistoryTab(QWidget):
