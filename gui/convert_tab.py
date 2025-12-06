@@ -184,3 +184,6 @@ class ConvertTab(QWidget):
         else:
             item.update_status("Failed")
             item.progress.setValue(0)
+
+        # REMOVE ITEM FROM QUEUE AFTER DONE
+        # (optional but matches your old behavior)

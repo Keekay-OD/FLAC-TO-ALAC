@@ -14,189 +14,153 @@ class ConversionManager:
         self.settings = settings
         self.history = history_manager
 
-        # MUST initialize resume system FIRST
+        self.callback_progress = None
+        self.callback_complete = None
+
+        # Resume tracking
         self.resume_state = self.load_resume_state()
 
-        # Thread pool for conversions
+        # Thread pool
         self.thread_pool = ConversionThreadPool(
             performance_mode=settings.get("performance_mode", "balanced"),
             threads_override=settings.get("threads_override")
         )
 
-
     # ------------------------------------------------------------------
-    def load_resume(self):
-        if RESUME_FILE.exists():
-            try:
-                return json.loads(RESUME_FILE.read_text())
-            except:
-                pass
-        return {"files": {}}
-
-    def save_resume(self):
-        RESUME_FILE.write_text(json.dumps(self.resume, indent=4))
-
+    # RESUME SYSTEM
     # ------------------------------------------------------------------
-    def file_changed(self, path: Path):
-        """Return True if file size OR timestamp changed."""
-        key = str(path)
-        stat = path.stat()
-        size = stat.st_size
-        mtime = stat.st_mtime
-
-        old = self.resume["files"].get(key)
-        if not old:
-            return True  # never converted
-
-        if old["size"] != size:
-            return True
-
-        if abs(old["mtime"] - mtime) > 0.0001:
-            return True
-
-        return False
-
-    def store_file_state(self, path: Path):
-        stat = path.stat()
-        self.resume["files"][str(path)] = {
-            "size": stat.st_size,
-            "mtime": stat.st_mtime
-        }
-        self.save_resume()
-
-    # ------------------------------------------------------------------
-
-
-
-# --------------------------------------------------------------
-# RESUME SYSTEM (fixed)
-# --------------------------------------------------------------
-
     def load_resume_state(self):
-        """Load resume tracking file (auto-repair if missing fields)."""
         if not RESUME_FILE.exists():
-            return {"files": {}, "converted": []}
+            return {"files": {}}
 
         try:
             data = json.loads(RESUME_FILE.read_text())
         except:
-            return {"files": {}, "converted": []}
+            return {"files": {}}
 
-        # Auto-fix missing fields
-        if "files" not in data or not isinstance(data["files"], dict):
+        if "files" not in data:
             data["files"] = {}
-        if "converted" not in data or not isinstance(data["converted"], list):
-            data["converted"] = []
 
         return data
-
 
     def save_resume_state(self):
         RESUME_FILE.write_text(json.dumps(self.resume_state, indent=4))
 
-
     def file_changed(self, flac_path: Path):
-        """Return True if file was modified since last run."""
         key = str(flac_path)
-
-        mtime = flac_path.stat().st_mtime
-        size = flac_path.stat().st_size
+        stat = flac_path.stat()
+        info = {"mtime": stat.st_mtime, "size": stat.st_size}
 
         previous = self.resume_state["files"].get(key)
 
-        # First time seeing file → treat as changed
+        # First time processing
         if previous is None:
-            self.resume_state["files"][key] = {"mtime": mtime, "size": size}
+            self.resume_state["files"][key] = info
             self.save_resume_state()
             return True
 
-        # Compare old vs new
-        changed = (previous["mtime"] != mtime) or (previous["size"] != size)
+        changed = (
+            previous["mtime"] != info["mtime"] or
+            previous["size"] != info["size"]
+        )
 
-        # Update stored values
-        self.resume_state["files"][key] = {"mtime": mtime, "size": size}
+        # Always update stored state
+        self.resume_state["files"][key] = info
         self.save_resume_state()
 
         return changed
 
-
-
-
-
-
-
+    # ------------------------------------------------------------------
     def convert_file(self, flac_path: Path):
         return self.thread_pool.submit(self._worker, flac_path)
 
     # ------------------------------------------------------------------
     def _worker(self, flac_path: Path):
+        from core.event_bus import event_bus
 
         m4a_path = flac_path.with_suffix(".m4a")
 
-        # --------- SKIP if unchanged ----------
+        # SKIP
         if not self.file_changed(flac_path) and m4a_path.exists():
-            print("[SKIP] Already converted:", flac_path)
-            from core.event_bus import event_bus
+            print("[SKIP]", flac_path)
+            if self.callback_complete:
+                self.callback_complete(flac_path, True, True)
             event_bus.conversion_finished.emit(str(flac_path), True)
             return
 
-        # --------- Metadata extraction ----------
+        # Metadata
         metadata, cover = extract_flac_metadata(flac_path)
 
-        # --------- Build ffmpeg command ----------
+        # FFmpeg command
         cmd = [
             "ffmpeg",
             "-hide_banner",
-            "-loglevel", "error",
+            "-loglevel", "warning",
+            "-vn",                # <--- discard ALL video streams
+            "-sn",                # discard subtitles (if any)
+            "-dn",                # discard data streams
             "-i", str(flac_path),
+
+            "-map", "0:a:0",      # FORCE map only the first audio stream
             "-c:a", "alac",
             "-movflags", "+faststart",
+
             "-progress", "pipe:1",
             "-y",
             str(m4a_path),
         ]
 
-        # --------- Progress callback ----------
+
+        # UPDATE
         def on_update(info):
-            if "out_time_ms" in info:
-                try:
-                    ms = int(info["out_time_ms"])
-                    percent = min(100, int(ms / 50000))
-                except:
-                    percent = 0
+            if "out_time_ms" not in info:
+                return
 
-                from core.event_bus import event_bus
-                event_bus.progress_updated.emit(str(flac_path), percent)
+            try:
+                ms = int(info["out_time_ms"])
+                pct = max(0, min(100, (ms / 120_000) * 100))  # use real progress
+            except:
+                pct = 0
 
-        # --------- Completion callback ----------
+            if self.callback_progress:
+                self.callback_progress(flac_path, pct)
+
+        # COMPLETE
         def on_complete(success):
-            from core.event_bus import event_bus
+            skipped = False
 
             if success:
-                # write metadata
-                write_alac_metadata(m4a_path, metadata, cover)
+                try:
+                    write_alac_metadata(m4a_path, metadata, cover)
+                except Exception as e:
+                    print("[Metadata ERROR]", e)
 
-                # history
-                self.history.add_record(
-                    flac=str(flac_path),
-                    alac=str(m4a_path),
-                    metadata=metadata,
-                    size_before=flac_path.stat().st_size,
-                    size_after=m4a_path.stat().st_size
-                )
+                # Add to history
+                if self.history:
+                    self.history.add_record(
+                        flac=str(flac_path),
+                        alac=str(m4a_path),
+                        metadata=metadata,
+                        size_before=flac_path.stat().st_size,
+                        size_after=m4a_path.stat().st_size
+                    )
 
-                # delete original?
+                # Delete original
                 if self.settings.get("delete_originals", False):
                     try:
                         flac_path.unlink()
                     except:
                         pass
 
-                self.store_file_state(flac_path)
+                # Save resume
+                self.file_changed(flac_path)
+
+            if self.callback_complete:
+                self.callback_complete(flac_path, success, skipped)
 
             event_bus.conversion_finished.emit(str(flac_path), success)
 
-        # --------- RUN SAFE FFmpeg ----------
+        # RUN FFmpeg
         runner = FFmpegProgress(cmd, on_update, on_complete)
         runner.run()
 

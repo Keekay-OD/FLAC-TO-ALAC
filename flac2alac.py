@@ -29,11 +29,18 @@ def convert_flac_to_alac(flac_path: Path, delete_original=False):
 
     # Run FFmpeg conversion
     cmd = [
-        "ffmpeg", "-y",
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel", "warning",  # <-- show actual issues
         "-i", str(flac_path),
+        "-vn",
         "-c:a", "alac",
-        str(m4a_path)
+        "-movflags", "+faststart",
+        "-progress", "pipe:1",
+        "-y",
+        str(m4a_path),
     ]
+
 
     result = subprocess.run(cmd, capture_output=True)
     if result.returncode != 0:
