@@ -1,3 +1,4 @@
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QPushButton, QLabel, QListWidget, QListWidgetItem,
     QScrollArea, QMessageBox
@@ -8,8 +9,7 @@ from gui.components.folder_selector import FolderSelector
 from gui.components.thread_selector import ThreadSelector
 from gui.components.progress_item import ProgressItem
 from core.converter import ConversionManager
-self.history_manager = HistoryManager()
-
+from core.history_manager import HistoryManager
 
 class ConvertTab(QWidget):
 
@@ -57,15 +57,15 @@ class ConvertTab(QWidget):
 
         # Initialize conversion manager
         perf_mode, override = self.thread_selector.get_config()
+        self.settings["performance_mode"] = perf_mode
+        self.settings["threads_override"] = override
+
 
         self.manager = ConversionManager(
-            settings={
-                "performance_mode": perf_mode,
-                "threads_override": override,
-                "delete_originals": self.settings.get("delete_originals", False)
-            },
+            settings=self.settings,
             history_manager=self.history_manager
         )
+
 
 
         # collect files

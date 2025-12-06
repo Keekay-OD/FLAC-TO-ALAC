@@ -18,7 +18,8 @@ class ConversionManager:
         self.resume_state = self.load_resume_state()
         self.thread_pool = ConversionThreadPool(
             performance_mode=settings.get("performance_mode", "balanced"),
-            override=settings.get("threads_override")
+            threads_override=settings.get("threads_override")
+
         )
 
         self.callback_progress = None     # (path, progress_dict)
