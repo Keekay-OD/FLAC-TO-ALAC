@@ -46,7 +46,6 @@ class MainWindow(QMainWindow):
         self.watch_tab.history = self.history
 
         # SettingsTab needs access to convert tab's settings
-        self.settings_tab.manager = self.convert_tab.settings
 
         # --------------------------------------------------------
         # Add tabs to the UI

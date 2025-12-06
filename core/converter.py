@@ -15,25 +15,35 @@ class ConversionManager:
         self.settings = settings
         self.history = history_manager
 
+        # Resume file MUST be clean
         self.resume_state = self.load_resume_state()
+
         self.thread_pool = ConversionThreadPool(
             performance_mode=settings.get("performance_mode", "balanced"),
             threads_override=settings.get("threads_override")
-
         )
 
-        self.callback_progress = None     # (path, progress_dict)
-        self.callback_complete = None     # (path, success)
+        # Callbacks injected by GUI
+        self.callback_progress = None
+        self.callback_complete = None
 
-    # ----------------------------------------------------------------------
-    # Resume State Management
-    # ----------------------------------------------------------------------
+    # --------------------------------------------------------------
+    # RESUME SYSTEM
+    # --------------------------------------------------------------
+
     def load_resume_state(self):
+        """Load resume info; if file invalid, reset it."""
         if not RESUME_FILE.exists():
             return {"converted": []}
 
         try:
-            return json.loads(RESUME_FILE.read_text())
+            data = json.loads(RESUME_FILE.read_text())
+            if "converted" not in data:
+                return {"converted": []}
+            # MUST be list
+            if not isinstance(data["converted"], list):
+                return {"converted": []}
+            return data
         except:
             return {"converted": []}
 
@@ -47,29 +57,35 @@ class ConversionManager:
             self.save_resume_state()
 
     def already_converted(self, path: Path):
-        return str(path) in self.resume_state["converted"]
+        return str(path) in self.resume_state.get("converted", [])
 
-    # ----------------------------------------------------------------------
-    # Queue a conversion job
-    # ----------------------------------------------------------------------
+    # --------------------------------------------------------------
+    # QUEUE JOB
+    # --------------------------------------------------------------
+
     def convert_file(self, flac_path: Path):
-        """Submit file to thread pool."""
+        """Always queue, but let worker decide skip."""
         return self.thread_pool.submit(self._convert_worker, flac_path)
 
-    # ----------------------------------------------------------------------
-    # The worker that performs the conversion
-    # ----------------------------------------------------------------------
+    # --------------------------------------------------------------
+    # WORKER FOR EACH FILE
+    # --------------------------------------------------------------
+
     def _convert_worker(self, flac_path: Path):
+
         m4a_path = flac_path.with_suffix(".m4a")
 
-        if self.already_converted(flac_path):
+        # ----------------------------------------------------------
+        # FIX: ONLY SKIP if output file exists AND in resume list
+        # ----------------------------------------------------------
+        if m4a_path.exists() and self.already_converted(flac_path):
             if self.callback_complete:
                 self.callback_complete(flac_path, True, skipped=True)
             return
 
+        # Always allow conversion if resume file is empty
         metadata, cover = extract_flac_metadata(flac_path)
 
-        # FFmpeg command
         cmd = [
             "ffmpeg",
             "-i", str(flac_path),
@@ -80,22 +96,28 @@ class ConversionManager:
             str(m4a_path)
         ]
 
-        # Progress handler
+        # FFmpeg progress callback
         def on_update(info):
             if self.callback_progress:
                 self.callback_progress(flac_path, info)
 
-        # Completion handler
         def on_complete(success):
             if success:
-                write_alac_metadata(m4a_path, metadata, cover)
-                self.history.add_record(
-                    flac=str(flac_path),
-                    alac=str(m4a_path),
-                    metadata=metadata,
-                    size_before=flac_path.stat().st_size,
-                    size_after=m4a_path.stat().st_size
-                )
+                try:
+                    write_alac_metadata(m4a_path, metadata, cover)
+                except:
+                    pass
+
+                try:
+                    self.history.add_record(
+                        flac=str(flac_path),
+                        alac=str(m4a_path),
+                        metadata=metadata,
+                        size_before=flac_path.stat().st_size,
+                        size_after=m4a_path.stat().st_size
+                    )
+                except Exception as e:
+                    print("History save failed:", e)
 
                 if self.settings.get("delete_originals", False):
                     try:
@@ -111,20 +133,16 @@ class ConversionManager:
         runner = FFmpegProgress(cmd, on_update, on_complete)
         runner.run()
 
-    # ----------------------------------------------------------------------
-    # Folder Scanning
-    # ----------------------------------------------------------------------
+    # --------------------------------------------------------------
+    # FOLDER SCANNING
+    # --------------------------------------------------------------
     def scan_for_flac(self, folders):
         flac_files = []
-
         for folder in folders:
-            f = Path(folder)
-            if not f.exists():
-                continue
-            flac_files.extend(list(f.rglob("*.flac")))
-
+            fp = Path(folder)
+            if fp.exists():
+                flac_files.extend(fp.rglob("*.flac"))
         return flac_files
 
-    # ----------------------------------------------------------------------
     def shutdown(self):
         self.thread_pool.shutdown()
