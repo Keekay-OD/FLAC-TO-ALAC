@@ -1,49 +1,146 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QPushButton, QListWidget, QFileDialog, QHBoxLayout
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QFileDialog, QLabel, QFrame
 )
+from PyQt6.QtCore import Qt
+import os
+
+
+class FolderCard(QWidget):
+    """A Discord-style card representing a single folder."""
+
+    def __init__(self, folder_path: str, remove_callback):
+        super().__init__()
+
+        self.folder = folder_path
+        self.remove_callback = remove_callback
+
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #313338;
+                border: 1px solid #1e1f22;
+                border-radius: 8px;
+                padding: 10px;
+            }
+            QLabel {
+                color: white;
+                font-size: 13px;
+            }
+            QPushButton {
+                background-color: #ED4245;
+                color: white;
+                padding: 4px 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #c03532;
+            }
+        """)
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
+
+        self.lbl = QLabel(folder_path)
+        self.lbl.setWordWrap(False)
+
+        btn_remove = QPushButton("✕")
+        btn_remove.setFixedWidth(30)
+        btn_remove.clicked.connect(lambda: self.remove_callback(self.folder))
+
+        layout.addWidget(self.lbl)
+        layout.addStretch()
+        layout.addWidget(btn_remove)
+
+        self.setLayout(layout)
 
 
 class FolderSelector(QWidget):
 
-    def __init__(self, settings):
+    def __init__(self, settings: dict):
         super().__init__()
 
         self.settings = settings
+        self.folder_list = settings.get("folders", [])
 
-        layout = QVBoxLayout()
-        btn_row = QHBoxLayout()
+        self.setStyleSheet("""
+            QPushButton {
+                background-color: #5865F2;
+                color: white;
+                padding: 8px;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: #4752C4;
+            }
+        """)
 
-        self.btn_add = QPushButton("Add Folder")
-        self.btn_remove = QPushButton("Remove Selected")
+        self.layout = QVBoxLayout()
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(8)
 
-        btn_row.addWidget(self.btn_add)
-        btn_row.addWidget(self.btn_remove)
+        # Title
+        title = QLabel("Selected Music Folders")
+        title.setStyleSheet("color: #ffffff; font-size: 15px; font-weight: bold; margin-bottom: 4px;")
+        self.layout.addWidget(title)
 
-        self.folder_list = QListWidget()
-        for f in settings.get("watched_folders", []):
-            self.folder_list.addItem(f)
+        # Folder cards container
+        self.card_container = QVBoxLayout()
+        self.card_container.setSpacing(8)
+        self.layout.addLayout(self.card_container)
 
-        layout.addLayout(btn_row)
-        layout.addWidget(self.folder_list)
-        self.setLayout(layout)
+        # "Add folder" button
+        btn_add = QPushButton("Add Folder")
+        btn_add.clicked.connect(self.add_folder_dialog)
+        self.layout.addWidget(btn_add)
 
-        self.btn_add.clicked.connect(self.add_folder)
-        self.btn_remove.clicked.connect(self.remove_selected)
+        self.layout.addStretch()
+        self.setLayout(self.layout)
 
-    def add_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Music Folder")
-        if folder:
-            self.folder_list.addItem(folder)
-            self.save()
+        # Load saved folders
+        self.refresh_cards()
 
-    def remove_selected(self):
-        for item in self.folder_list.selectedItems():
-            self.folder_list.takeItem(self.folder_list.row(item))
-        self.save()
+    # ----------------------------------------------------------
+    # Refresh folder cards
+    # ----------------------------------------------------------
+    def refresh_cards(self):
+        while self.card_container.count() > 0:
+            item = self.card_container.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
 
-    def get_folders(self):
-        return [self.folder_list.item(i).text()
-                for i in range(self.folder_list.count())]
+        for folder in self.folder_list:
+            card = FolderCard(folder, self.remove_folder)
+            self.card_container.addWidget(card)
 
-    def save(self):
-        self.settings["watched_folders"] = self.get_folders()
+    # ----------------------------------------------------------
+    # Add Folder
+    # ----------------------------------------------------------
+    def add_folder_dialog(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Directory")
+
+        if not folder:
+            return
+
+        folder = os.path.normpath(folder)
+
+        if folder not in self.folder_list:
+            self.folder_list.append(folder)
+            self.settings["folders"] = self.folder_list
+            self.refresh_cards()
+
+    # ----------------------------------------------------------
+    # Remove Folder
+    # ----------------------------------------------------------
+    def remove_folder(self, folder):
+        if folder in self.folder_list:
+            self.folder_list.remove(folder)
+            self.settings["folders"] = self.folder_list
+            self.refresh_cards()
+
+    # ----------------------------------------------------------
+    # Called by ConvertTab
+    # ----------------------------------------------------------
+    def get_folders(self) -> list:
+        return list(self.folder_list)

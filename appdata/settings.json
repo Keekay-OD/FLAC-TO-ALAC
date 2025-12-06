@@ -1,0 +1,5 @@
+{
+    "delete_originals": false,
+    "performance_mode": "balanced",
+    "threads_override": null
+}

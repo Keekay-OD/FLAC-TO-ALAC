@@ -2,17 +2,17 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 
-def get_thread_count(performance_mode: str, override: int | None = None):
+def resolve_thread_count(performance_mode: str, override: int | None):
     cpu = os.cpu_count() or 4
 
     if override:
-        return override
+        return int(override)
 
     if performance_mode == "safe":
-        return min(4, cpu // 2)
+        return max(1, cpu // 4)
 
     if performance_mode == "balanced":
-        return max(2, cpu - 2)
+        return max(2, cpu // 2)
 
     if performance_mode == "max":
         return cpu
@@ -20,43 +20,16 @@ def get_thread_count(performance_mode: str, override: int | None = None):
     return 4
 
 
-import os
-from concurrent.futures import ThreadPoolExecutor
-
-
 class ConversionThreadPool:
 
     def __init__(self, performance_mode="balanced", threads_override=None):
-        self.performance_mode = performance_mode
-        self.override = threads_override
+        workers = resolve_thread_count(performance_mode, threads_override)
+        print(f"[ThreadPool] Starting with {workers} workers")
 
-        # Determine number of workers
-        if threads_override:
-            workers = int(threads_override)
+        self.executor = ThreadPoolExecutor(max_workers=workers)
 
-        elif performance_mode == "safe":
-            workers = 1
-
-        elif performance_mode == "balanced":
-            workers = max(2, (os.cpu_count() or 4) // 2)
-
-        elif performance_mode == "max":
-            workers = os.cpu_count() or 8
-
-        else:
-            workers = 4
-
-        self.max_workers = workers
-
-        # ⭐ Create executor
-        self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
-
-    # ------------------------------------------------------------------
     def submit(self, fn, *args, **kwargs):
-        """Submit a job to the thread pool."""
         return self.executor.submit(fn, *args, **kwargs)
 
-    # ------------------------------------------------------------------
-    def shutdown(self, wait=True):
-        """Shut down thread pool when closing app."""
-        self.executor.shutdown(wait=wait)
+    def shutdown(self):
+        self.executor.shutdown(wait=False)

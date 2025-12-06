@@ -1,6 +1,7 @@
 import subprocess
 from pathlib import Path
 import json
+import time
 
 from core.ffmpeg_progress import FFmpegProgress
 from core.metadata import extract_flac_metadata, write_alac_metadata
@@ -14,20 +15,19 @@ class ConversionManager:
         self.settings = settings
         self.history = history_manager
 
-        # Resume file
         self.resume_state = self.load_resume_state()
 
-        # Thread pool with performance settings
         self.thread_pool = ConversionThreadPool(
-            performance_mode=self.settings.get("performance_mode", "balanced"),
-            threads_override=self.settings.get("threads_override")
+            performance_mode=settings.get("performance_mode", "balanced"),
+            threads_override=settings.get("threads_override")
         )
 
+        # callbacks (GUI injected)
         self.callback_progress = None
         self.callback_complete = None
 
     # --------------------------------------------------------------
-    # Resume
+    # Resume save/load
     # --------------------------------------------------------------
     def load_resume_state(self):
         if not RESUME_FILE.exists():
@@ -39,6 +39,7 @@ class ConversionManager:
                 return data
         except:
             pass
+
         return {"converted": []}
 
     def save_resume_state(self):
@@ -54,25 +55,30 @@ class ConversionManager:
         return str(path) in self.resume_state["converted"]
 
     # --------------------------------------------------------------
-    # Queue job
+    # Queue conversion
     # --------------------------------------------------------------
     def convert_file(self, flac_path: Path):
+        print(f"[Queue] {flac_path}")
         return self.thread_pool.submit(self._convert_worker, flac_path)
 
     # --------------------------------------------------------------
-    # Worker thread
+    # Worker
     # --------------------------------------------------------------
     def _convert_worker(self, flac_path: Path):
 
         m4a_path = flac_path.with_suffix(".m4a")
 
-        # Skip if already done
+        # Skip if already converted
         if m4a_path.exists() and self.already_converted(flac_path):
             if self.callback_complete:
                 self.callback_complete(flac_path, True, skipped=True)
             return
 
         metadata, cover = extract_flac_metadata(flac_path)
+
+        duration_seconds = metadata.get("DURATION_SECONDS")  # provided by extractor
+        if not duration_seconds:
+            duration_seconds = 0
 
         cmd = [
             "ffmpeg",
@@ -84,15 +90,23 @@ class ConversionManager:
             str(m4a_path)
         ]
 
+        # --------------- PROGRESS HANDLER --------------------------
         def on_update(info):
-            if self.callback_progress:
-                self.callback_progress(flac_path, info)
+            if "out_time_ms" in info:
+                ms = int(info["out_time_ms"])
+                if duration_seconds > 0:
+                    pct = min(100, (ms / (duration_seconds * 1000)) * 100)
+                else:
+                    pct = 0
 
+                if self.callback_progress:
+                    self.callback_progress(flac_path, pct)
+
+        # --------------- COMPLETION HANDLER ------------------------
         def on_complete(success):
             if success:
                 write_alac_metadata(m4a_path, metadata, cover)
 
-                # Save history
                 try:
                     self.history.add_record(
                         flac=str(flac_path),
@@ -104,15 +118,24 @@ class ConversionManager:
                 except Exception as e:
                     print("History save failed:", e)
 
-                # Delete FLAC
+                # Delete original
                 if self.settings.get("delete_originals", False):
                     try:
                         flac_path.unlink()
-                        print(f"Deleted original FLAC: {flac_path}")
+                        print(f"[Delete] Removed FLAC: {flac_path}")
                     except Exception as e:
-                        print(f"Could not delete {flac_path}: {e}")
+                        print(f"[Delete ERROR] Cannot delete {flac_path}: {e}")
 
                 self.mark_converted(flac_path)
+
+                # Auto-remove empty folder
+                parent = flac_path.parent
+                try:
+                    if not any(parent.iterdir()):
+                        parent.rmdir()
+                        print(f"[Cleanup] Deleted empty folder: {parent}")
+                except:
+                    pass
 
             if self.callback_complete:
                 self.callback_complete(flac_path, success)

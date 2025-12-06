@@ -1,154 +1,107 @@
 import sqlite3
-from pathlib import Path
-import csv
 from datetime import datetime
-
 from utils.paths import HISTORY_DB
 
 
 class HistoryManager:
+    """SQLite history storage for conversions."""
 
     def __init__(self):
-        self.db_path = HISTORY_DB
         self._init_db()
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------
+    # Initialize DB
+    # ----------------------------------------------------------
     def _init_db(self):
-        """Create history database if not exists."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(HISTORY_DB)
         cur = conn.cursor()
-
-        cur.execute("""
+        cur.execute(
+            """
             CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 flac_path TEXT,
                 alac_path TEXT,
                 artist TEXT,
                 album TEXT,
-                track TEXT,
+                title TEXT,
                 size_before INTEGER,
                 size_after INTEGER,
-                date TEXT,
-                status TEXT
+                date TEXT
             )
-        """)
-
+            """
+        )
         conn.commit()
         conn.close()
 
-    # ------------------------------------------------------------------
+    # ----------------------------------------------------------
+    # Add one conversion record
+    # ----------------------------------------------------------
     def add_record(self, flac, alac, metadata, size_before, size_after):
-        """Insert a conversion record."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(HISTORY_DB)
         cur = conn.cursor()
-
-        cur.execute("""
+        cur.execute(
+            """
             INSERT INTO history (
-                flac_path, alac_path, artist, album, track,
-                size_before, size_after, date, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            flac,
-            alac,
-            metadata.get("artist", "Unknown"),
-            metadata.get("album", "Unknown"),
-            metadata.get("title", Path(flac).stem),
-            size_before,
-            size_after,
-            datetime.now().isoformat(),
-            "success"
-        ))
-
+                flac_path, alac_path, artist, album, title,
+                size_before, size_after, date
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                flac,
+                alac,
+                metadata.get("ARTIST", "Unknown"),
+                metadata.get("ALBUM", "Unknown"),
+                metadata.get("TITLE", "Unknown"),
+                size_before,
+                size_after,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
+        )
         conn.commit()
         conn.close()
 
-    # ------------------------------------------------------------------
-    def mark_failed(self, flac):
-        """Record failed conversion."""
-        conn = sqlite3.connect(self.db_path)
+    # ----------------------------------------------------------
+    # Load all rows (newest first)
+    # ----------------------------------------------------------
+    def load_all(self):
+        conn = sqlite3.connect(HISTORY_DB)
         cur = conn.cursor()
-
-        cur.execute("""
-            INSERT INTO history (
-                flac_path, alac_path, artist, album, track,
-                size_before, size_after, date, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            flac,
-            "",
-            "",
-            "",
-            "",
-            0,
-            0,
-            datetime.now().isoformat(),
-            "failed"
-        ))
-
-        conn.commit()
-        conn.close()
-
-    # ------------------------------------------------------------------
-    def query(self, search="", artist="", album="", status=""):
-        """Return filtered history as list of dicts."""
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-
-        query = "SELECT * FROM history WHERE 1=1"
-        params = []
-
-        if search:
-            query += " AND (flac_path LIKE ? OR alac_path LIKE ? OR track LIKE ?)"
-            s = f"%{search}%"
-            params += [s, s, s]
-
-        if artist:
-            query += " AND artist LIKE ?"
-            params.append(f"%{artist}%")
-
-        if album:
-            query += " AND album LIKE ?"
-            params.append(f"%{album}%")
-
-        if status:
-            query += " AND status = ?"
-            params.append(status)
-
-        query += " ORDER BY date DESC"
-
-        cur.execute(query, params)
+        cur.execute("SELECT * FROM history ORDER BY id DESC")
         rows = cur.fetchall()
-
         conn.close()
 
-        # Convert to dicts
-        keys = ["id", "flac", "alac", "artist", "album", "track",
-                "size_before", "size_after", "date", "status"]
+        # Convert to dicts so UI is same as before
+        results = []
+        for r in rows:
+            results.append({
+                "id": r[0],
+                "flac": r[1],
+                "alac": r[2],
+                "artist": r[3],
+                "album": r[4],
+                "title": r[5],
+                "size_before": r[6],
+                "size_after": r[7],
+                "date": r[8],
+            })
+        return results
 
-        return [dict(zip(keys, row)) for row in rows]
+    # ----------------------------------------------------------
+    # Delete single entry
+    # ----------------------------------------------------------
+    def delete(self, row_id):
+        conn = sqlite3.connect(HISTORY_DB)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM history WHERE id = ?", (row_id,))
+        conn.commit()
+        conn.close()
 
-    # ------------------------------------------------------------------
-    def export_csv(self, out_path):
-        """Export history to CSV."""
-        rows = self.query()
-
-        with open(out_path, "w", newline="", encoding="utf8") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                "ID", "FLAC Path", "ALAC Path", "Artist", "Album", "Track",
-                "Size Before", "Size After", "Date", "Status"
-            ])
-
-            for r in rows:
-                writer.writerow([
-                    r["id"], r["flac"], r["alac"], r["artist"], r["album"],
-                    r["track"], r["size_before"], r["size_after"],
-                    r["date"], r["status"]
-                ])
-
-    # ------------------------------------------------------------------
-    def clear_history(self):
-        conn = sqlite3.connect(self.db_path)
+    # ----------------------------------------------------------
+    # Clear all
+    # ----------------------------------------------------------
+    def clear(self):
+        conn = sqlite3.connect(HISTORY_DB)
         cur = conn.cursor()
         cur.execute("DELETE FROM history")
         conn.commit()

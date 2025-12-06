@@ -13,38 +13,48 @@ APP_NAME = "Vibes FLAC → ALAC Converter"
 APP_VERSION = "1.0.0"
 
 
+DEFAULT_SETTINGS = {
+    "delete_originals": False,
+    "performance_mode": "balanced",
+    "threads_override": None,
+    "watched_folders": [],
+    "dark_mode": True
+}
+
+
 def load_settings():
-    """Load or create settings.json."""
+    """Load settings file or restore defaults if corrupted."""
     if not SETTINGS_FILE.exists():
-        default_settings = {
-            "delete_originals": False,
-            "performance_mode": "balanced",
-            "threads_override": None,
-            "watched_folders": [],
-            "dark_mode": True
-        }
-        SETTINGS_FILE.write_text(json.dumps(default_settings, indent=4))
-        return default_settings
+        SETTINGS_FILE.write_text(json.dumps(DEFAULT_SETTINGS, indent=4))
+        return DEFAULT_SETTINGS.copy()
 
     try:
-        return json.loads(SETTINGS_FILE.read_text())
+        data = json.loads(SETTINGS_FILE.read_text())
+
+        # Ensure missing keys get default values
+        for k, v in DEFAULT_SETTINGS.items():
+            if k not in data:
+                data[k] = v
+
+        return data
+
     except Exception:
-        # Auto-repair damaged file
-        SETTINGS_FILE.write_text(json.dumps(default_settings, indent=4))
-        return default_settings
+        # Auto-repair damaged settings file
+        SETTINGS_FILE.write_text(json.dumps(DEFAULT_SETTINGS, indent=4))
+        return DEFAULT_SETTINGS.copy()
 
 
 def apply_dark_theme(app: QApplication):
-    """Apply a modern dark theme."""
+    """Apply a modern dark mode theme."""
     DARK_STYLE = """
     QWidget {
-        background-color: #1e1e1e;
-        color: #dddddd;
+        background-color: #1E1E1E;
+        color: #DDDDDD;
         font-size: 14px;
     }
 
     QLineEdit, QTextEdit, QListWidget, QTreeWidget, QTableWidget {
-        background-color: #2b2b2b;
+        background-color: #2B2B2B;
         border: 1px solid #444;
         padding: 4px;
     }
@@ -66,11 +76,11 @@ def apply_dark_theme(app: QApplication):
 
     QTabWidget::pane {
         border: 1px solid #444;
-        background-color: #1e1e1e;
+        background-color: #1E1E1E;
     }
 
     QTabBar::tab {
-        background: #333;
+        background: #2A2A2A;
         padding: 8px;
         border: 1px solid #444;
         border-bottom: 0px;
@@ -86,7 +96,7 @@ def apply_dark_theme(app: QApplication):
 
 def main():
     """Main application startup."""
-    ensure_app_folders()
+    ensure_app_folders()  # MUST run first
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
