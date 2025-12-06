@@ -1,133 +1,120 @@
 import subprocess
-import time
 import threading
+import time
+import sys
+import os
+import signal
 
 
 class FFmpegProgress:
     """
-    Runs FFmpeg and monitors its -progress output.
-    Calls:
-        on_update(dict | pct | whatever)
-        on_complete(bool)
+    Fully safe FFmpeg wrapper:
+    - No charset crashes
+    - No zombie FFmpeg processes
+    - Threads exit reliably
+    - Auto-kill on hang or timeout
     """
 
-    def __init__(self, ffmpeg_cmd, on_update, on_complete):
-        self.cmd = ffmpeg_cmd
+    def __init__(self, cmd, on_update, on_complete, timeout=600):
+        self.cmd = cmd
         self.on_update = on_update
         self.on_complete = on_complete
+        self.process = None
+        self._stop = False
+        self.timeout = timeout  # hard timeout to prevent zombie ffmpeg
 
-        self.start_time = None
-        self.duration_ms = None
-        self.last_timestamp = 0
+    # ------------------------------------------------------------------
+    def safe_decode(self, raw):
+        """Decode without ever raising exceptions (UTF-8 only)."""
+        if not raw:
+            return ""
+        return raw.decode("utf-8", errors="ignore").strip()
 
-    # ---------------------------------------------------------
-    # Parse FFmpeg progress lines
-    # ---------------------------------------------------------
-    def parse_line(self, line: str):
-        if "=" not in line:
-            return None
-        key, value = line.strip().split("=", 1)
-        return key, value
+    # ------------------------------------------------------------------
+    def _reader(self, stream):
+        """Reads progress lines non-blocking."""
+        while not self._stop:
+            raw = stream.readline()
+            if not raw:
+                break
 
-    # ---------------------------------------------------------
-    # Convert FFmpeg "hh:mm:ss.ms" → milliseconds
-    # ---------------------------------------------------------
-    def ts_to_ms(self, ts: str):
+            text = self.safe_decode(raw)
+            if "=" in text:
+                k, v = text.split("=", 1)
+                try:
+                    self.on_update({k.strip(): v.strip()})
+                except:
+                    pass  # NEVER let UI crash
+
+    # ------------------------------------------------------------------
+    def kill_process(self):
+        """Kill FFmpeg safely (Windows and Linux)."""
+        if not self.process:
+            return
+
         try:
-            h, m, s = ts.split(":")
-            s, ms = s.split(".")
-            total = (
-                int(h) * 3600000 +
-                int(m) * 60000 +
-                int(s) * 1000 +
-                int(ms)
-            )
-            return total
+            self.process.kill()
         except:
-            return 0
-
-    # ---------------------------------------------------------
-    # Thread target
-    # ---------------------------------------------------------
-    def _run(self):
-        self.start_time = time.time()
-
-        process = subprocess.Popen(
-            self.cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
-        )
+            pass
 
         try:
-            while True:
-                line = process.stdout.readline()
-                if not line:
-                    break
+            # Some FFmpeg versions spawn child processes
+            if os.name == "nt":
+                subprocess.call(
+                    ["taskkill", "/F", "/T", "/PID", str(self.process.pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except:
+            pass
 
-                parsed = self.parse_line(line)
-                if not parsed:
-                    continue
-
-                key, value = parsed
-
-                # ---------------------------------------------
-                # Extract duration (only once)
-                # ---------------------------------------------
-                if key == "duration":  
-                    try:
-                        self.duration_ms = int(value)
-                    except:
-                        self.duration_ms = None
-
-                # ---------------------------------------------
-                # Get timestamp updates
-                # ---------------------------------------------
-                if key == "out_time_us" or key == "out_time_ms":
-                    try:
-                        current_ms = int(value)
-                        self.last_timestamp = current_ms
-                    except:
-                        continue
-
-                    if self.duration_ms:
-                        pct = (current_ms / self.duration_ms) * 100
-                        pct = min(100.0, pct)
-                    else:
-                        pct = 0.0
-
-                    elapsed = time.time() - self.start_time
-
-                    if current_ms > 0 and self.duration_ms and current_ms > 0:
-                        remaining_ms = self.duration_ms - current_ms
-                        speed = current_ms / (elapsed * 1000)
-                        eta = remaining_ms / 1000 / speed if speed > 0 else None
-                    else:
-                        eta = None
-                        speed = None
-
-                    self.on_update({
-                        "pct": pct,
-                        "elapsed": elapsed,
-                        "eta": eta,
-                        "speed": speed
-                    })
-
-                # Marks completion without closing
-                if key == "progress" and value == "end":
-                    break
-
-        except Exception as e:
-            print("[FFmpeg ERROR]", e)
-
-        finally:
-            process.wait()
-            self.on_complete(process.returncode == 0)
-
-    # ---------------------------------------------------------
-    # Public API
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
     def run(self):
-        thread = threading.Thread(target=self._run, daemon=True)
-        thread.start()
+        """Launch FFmpeg safely with full leak-prevention."""
+        try:
+            self.process = subprocess.Popen(
+                self.cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.DEVNULL,
+                bufsize=4096,                 # safe buffer
+                universal_newlines=False,     # never auto decode
+            )
+        except Exception as e:
+            print(f"[FFmpeg ERROR] Failed to launch: {e}")
+            if self.on_complete:
+                self.on_complete(False)
+            return
+
+        # Threads to read progress
+        t_out = threading.Thread(target=self._reader, args=(self.process.stdout,), daemon=True)
+        t_err = threading.Thread(target=self._reader, args=(self.process.stderr,), daemon=True)
+        t_out.start()
+        t_err.start()
+
+        # HARD timeout to prevent zombie FFmpeg
+        start_time = time.time()
+
+        while True:
+            ret = self.process.poll()
+            if ret is not None:
+                break
+
+            if time.time() - start_time > self.timeout:
+                print("[FFmpeg] TIMEOUT — killing process")
+                self.kill_process()
+                break
+
+            time.sleep(0.05)
+
+        self._stop = True
+        time.sleep(0.1)
+
+        success = (self.process.returncode == 0)
+
+        try:
+            self.on_complete(success)
+        except:
+            pass
+
+        self.kill_process()

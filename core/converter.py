@@ -1,7 +1,6 @@
-import subprocess
-from pathlib import Path
 import json
-import time
+from pathlib import Path
+from datetime import datetime
 
 from core.ffmpeg_progress import FFmpegProgress
 from core.metadata import extract_flac_metadata, write_alac_metadata
@@ -15,144 +14,197 @@ class ConversionManager:
         self.settings = settings
         self.history = history_manager
 
+        # MUST initialize resume system FIRST
         self.resume_state = self.load_resume_state()
 
+        # Thread pool for conversions
         self.thread_pool = ConversionThreadPool(
             performance_mode=settings.get("performance_mode", "balanced"),
             threads_override=settings.get("threads_override")
         )
 
-        # callbacks (GUI injected)
-        self.callback_progress = None
-        self.callback_complete = None
 
-    # --------------------------------------------------------------
-    # Resume save/load
-    # --------------------------------------------------------------
+    # ------------------------------------------------------------------
+    def load_resume(self):
+        if RESUME_FILE.exists():
+            try:
+                return json.loads(RESUME_FILE.read_text())
+            except:
+                pass
+        return {"files": {}}
+
+    def save_resume(self):
+        RESUME_FILE.write_text(json.dumps(self.resume, indent=4))
+
+    # ------------------------------------------------------------------
+    def file_changed(self, path: Path):
+        """Return True if file size OR timestamp changed."""
+        key = str(path)
+        stat = path.stat()
+        size = stat.st_size
+        mtime = stat.st_mtime
+
+        old = self.resume["files"].get(key)
+        if not old:
+            return True  # never converted
+
+        if old["size"] != size:
+            return True
+
+        if abs(old["mtime"] - mtime) > 0.0001:
+            return True
+
+        return False
+
+    def store_file_state(self, path: Path):
+        stat = path.stat()
+        self.resume["files"][str(path)] = {
+            "size": stat.st_size,
+            "mtime": stat.st_mtime
+        }
+        self.save_resume()
+
+    # ------------------------------------------------------------------
+
+
+
+# --------------------------------------------------------------
+# RESUME SYSTEM (fixed)
+# --------------------------------------------------------------
+
     def load_resume_state(self):
+        """Load resume tracking file (auto-repair if missing fields)."""
         if not RESUME_FILE.exists():
-            return {"converted": []}
+            return {"files": {}, "converted": []}
 
         try:
             data = json.loads(RESUME_FILE.read_text())
-            if isinstance(data.get("converted"), list):
-                return data
         except:
-            pass
+            return {"files": {}, "converted": []}
 
-        return {"converted": []}
+        # Auto-fix missing fields
+        if "files" not in data or not isinstance(data["files"], dict):
+            data["files"] = {}
+        if "converted" not in data or not isinstance(data["converted"], list):
+            data["converted"] = []
+
+        return data
+
 
     def save_resume_state(self):
         RESUME_FILE.write_text(json.dumps(self.resume_state, indent=4))
 
-    def mark_converted(self, path: Path):
-        p = str(path)
-        if p not in self.resume_state["converted"]:
-            self.resume_state["converted"].append(p)
+
+    def file_changed(self, flac_path: Path):
+        """Return True if file was modified since last run."""
+        key = str(flac_path)
+
+        mtime = flac_path.stat().st_mtime
+        size = flac_path.stat().st_size
+
+        previous = self.resume_state["files"].get(key)
+
+        # First time seeing file → treat as changed
+        if previous is None:
+            self.resume_state["files"][key] = {"mtime": mtime, "size": size}
             self.save_resume_state()
+            return True
 
-    def already_converted(self, path: Path):
-        return str(path) in self.resume_state["converted"]
+        # Compare old vs new
+        changed = (previous["mtime"] != mtime) or (previous["size"] != size)
 
-    # --------------------------------------------------------------
-    # Queue conversion
-    # --------------------------------------------------------------
+        # Update stored values
+        self.resume_state["files"][key] = {"mtime": mtime, "size": size}
+        self.save_resume_state()
+
+        return changed
+
+
+
+
+
+
+
     def convert_file(self, flac_path: Path):
-        print(f"[Queue] {flac_path}")
-        return self.thread_pool.submit(self._convert_worker, flac_path)
+        return self.thread_pool.submit(self._worker, flac_path)
 
-    # --------------------------------------------------------------
-    # Worker
-    # --------------------------------------------------------------
-    def _convert_worker(self, flac_path: Path):
+    # ------------------------------------------------------------------
+    def _worker(self, flac_path: Path):
 
         m4a_path = flac_path.with_suffix(".m4a")
 
-        # Skip if already converted
-        if m4a_path.exists() and self.already_converted(flac_path):
-            if self.callback_complete:
-                self.callback_complete(flac_path, True, skipped=True)
+        # --------- SKIP if unchanged ----------
+        if not self.file_changed(flac_path) and m4a_path.exists():
+            print("[SKIP] Already converted:", flac_path)
+            from core.event_bus import event_bus
+            event_bus.conversion_finished.emit(str(flac_path), True)
             return
 
+        # --------- Metadata extraction ----------
         metadata, cover = extract_flac_metadata(flac_path)
 
-        duration_seconds = metadata.get("DURATION_SECONDS")  # provided by extractor
-        if not duration_seconds:
-            duration_seconds = 0
-
+        # --------- Build ffmpeg command ----------
         cmd = [
             "ffmpeg",
+            "-hide_banner",
+            "-loglevel", "error",
             "-i", str(flac_path),
             "-c:a", "alac",
+            "-movflags", "+faststart",
             "-progress", "pipe:1",
-            "-nostats",
             "-y",
-            str(m4a_path)
+            str(m4a_path),
         ]
 
-        # --------------- PROGRESS HANDLER --------------------------
+        # --------- Progress callback ----------
         def on_update(info):
             if "out_time_ms" in info:
-                ms = int(info["out_time_ms"])
-                if duration_seconds > 0:
-                    pct = min(100, (ms / (duration_seconds * 1000)) * 100)
-                else:
-                    pct = 0
+                try:
+                    ms = int(info["out_time_ms"])
+                    percent = min(100, int(ms / 50000))
+                except:
+                    percent = 0
 
-                if self.callback_progress:
-                    self.callback_progress(flac_path, pct)
+                from core.event_bus import event_bus
+                event_bus.progress_updated.emit(str(flac_path), percent)
 
-        # --------------- COMPLETION HANDLER ------------------------
+        # --------- Completion callback ----------
         def on_complete(success):
+            from core.event_bus import event_bus
+
             if success:
+                # write metadata
                 write_alac_metadata(m4a_path, metadata, cover)
 
-                try:
-                    self.history.add_record(
-                        flac=str(flac_path),
-                        alac=str(m4a_path),
-                        metadata=metadata,
-                        size_before=flac_path.stat().st_size,
-                        size_after=m4a_path.stat().st_size
-                    )
-                except Exception as e:
-                    print("History save failed:", e)
+                # history
+                self.history.add_record(
+                    flac=str(flac_path),
+                    alac=str(m4a_path),
+                    metadata=metadata,
+                    size_before=flac_path.stat().st_size,
+                    size_after=m4a_path.stat().st_size
+                )
 
-                # Delete original
+                # delete original?
                 if self.settings.get("delete_originals", False):
                     try:
                         flac_path.unlink()
-                        print(f"[Delete] Removed FLAC: {flac_path}")
-                    except Exception as e:
-                        print(f"[Delete ERROR] Cannot delete {flac_path}: {e}")
+                    except:
+                        pass
 
-                self.mark_converted(flac_path)
+                self.store_file_state(flac_path)
 
-                # Auto-remove empty folder
-                parent = flac_path.parent
-                try:
-                    if not any(parent.iterdir()):
-                        parent.rmdir()
-                        print(f"[Cleanup] Deleted empty folder: {parent}")
-                except:
-                    pass
+            event_bus.conversion_finished.emit(str(flac_path), success)
 
-            if self.callback_complete:
-                self.callback_complete(flac_path, success)
-
+        # --------- RUN SAFE FFmpeg ----------
         runner = FFmpegProgress(cmd, on_update, on_complete)
         runner.run()
 
-    # --------------------------------------------------------------
-    # Folder scanning
-    # --------------------------------------------------------------
+    # ------------------------------------------------------------------
     def scan_for_flac(self, folders):
-        collected = []
+        flacs = []
         for folder in folders:
             p = Path(folder)
             if p.exists():
-                collected.extend(p.rglob("*.flac"))
-        return collected
-
-    def shutdown(self):
-        self.thread_pool.shutdown()
+                flacs.extend(p.rglob("*.flac"))
+        return flacs

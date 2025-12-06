@@ -1,103 +1,113 @@
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QListWidget, QListWidgetItem, QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
+    QLabel, QProgressBar, QLineEdit, QMessageBox, QPushButton
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QPixmap
+
+from core.history_manager import HistoryManager
+from core.event_bus import event_bus
 
 import os
-from core.history_manager import HistoryManager
 
 
-SPOTIFY_BG = "#0F0F0F"
-ROW_BG = "#1B1B1B"
-ROW_HOVER = "#232323"
-TEXT_COLOR = "#FFFFFF"
-SUBTEXT_COLOR = "#AAAAAA"
-ACCENT = "#5865F2"  # Discord blurple
+SPOTIFY_GREEN = "#1DB954"
+ROW_BG = "#1A1A1A"
+ROW_HOVER = "#222222"
+TEXT = "#FFFFFF"
+SUBTEXT = "#999999"
 
 
 class HistoryRow(QWidget):
-    """One Spotify-style track history row."""
-
     def __init__(self, record, delete_callback):
         super().__init__()
-
         self.record = record
         self.delete_callback = delete_callback
 
-        layout = QHBoxLayout()
-        layout.setContentsMargins(10, 5, 10, 5)
+        self.setFixedHeight(36)
 
-        # Thumbnail (placeholder)
+        layout = QHBoxLayout()
+        layout.setContentsMargins(6, 2, 6, 2)
+        layout.setSpacing(10)
+
+        # Small 32px thumbnail placeholder
         thumb = QLabel()
-        pix = QPixmap(40, 40)
-        pix.fill(Qt.GlobalColor.darkGray)
-        thumb.setPixmap(pix)
+        thumb.setFixedSize(32, 32)
+        thumb.setStyleSheet("background-color: #333; border-radius: 4px;")
         layout.addWidget(thumb)
 
-        # Title + metadata
+        # Title + artist inline
         text_col = QVBoxLayout()
-        title = QLabel(f"{os.path.basename(record['flac'])}")
-        title.setStyleSheet(f"color: {TEXT_COLOR}; font-weight: bold;")
+        title = QLabel(os.path.basename(record["flac"]))
+        title.setStyleSheet(f"color: {TEXT}; font-size: 13px; font-weight: bold;")
 
-        sub = QLabel(
-            f"{record['metadata'].get('ARTIST', 'Unknown Artist')} — "
-            f"{record['metadata'].get('ALBUM', 'Unknown Album')}"
-        )
-        sub.setStyleSheet(f"color: {SUBTEXT_COLOR}; font-size: 11px;")
+        sub = QLabel(f"{record['artist']} — {record['album']}")
+        sub.setStyleSheet(f"color: {SUBTEXT}; font-size: 11px;")
 
         text_col.addWidget(title)
         text_col.addWidget(sub)
-
-        layout.addLayout(text_col, 4)
+        layout.addLayout(text_col, 2)
 
         # Size info
-        before_mb = record['size_before'] / (1024 * 1024)
-        after_mb = record['size_after'] / (1024 * 1024)
-        saved = before_mb - after_mb
+        before_mb = record["size_before"] / (1024 * 1024)
+        after_mb = record["size_after"] / (1024 * 1024)
 
         size_label = QLabel(f"{before_mb:.1f} → {after_mb:.1f} MB")
-        size_label.setStyleSheet(f"color: {TEXT_COLOR};")
-        layout.addWidget(size_label, 1)
+        size_label.setStyleSheet(f"color: {TEXT}; font-size: 12px;")
+        layout.addWidget(size_label)
 
         # Date
         date_label = QLabel(record["date"])
-        date_label.setStyleSheet(f"color: {SUBTEXT_COLOR}; font-size: 11px;")
-        layout.addWidget(date_label, 1)
+        date_label.setStyleSheet(f"color: {SUBTEXT}; font-size: 11px;")
+        layout.addWidget(date_label)
 
-        # Delete button
-        btn_delete = QPushButton("Delete")
+        # Delete
+        btn_delete = QPushButton("✕")
+        btn_delete.setFixedWidth(28)
+        btn_delete.clicked.connect(lambda: delete_callback(record["id"]))
         btn_delete.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: #8B0000;
+            """
+            QPushButton {
+                background: #7A0000;
                 color: white;
-                border-radius: 6px;
-                padding: 4px;
-            }}
-            QPushButton:hover {{
-                background-color: #B30000;
-            }}
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background: #AA0000; }
             """
         )
-        btn_delete.clicked.connect(self.on_delete)
         layout.addWidget(btn_delete)
 
-        self.setLayout(layout)
-        self.setStyleSheet(f"background-color: {ROW_BG};")
+        # Progress bar (hidden until conversion update)
+        self.progress = QProgressBar()
+        self.progress.setFixedHeight(4)
+        self.progress.setRange(0, 100)
+        self.progress.setValue(100)  # default done
+        self.progress.setTextVisible(False)
+        self.progress.setStyleSheet(f"""
+            QProgressBar::chunk {{
+                background-color: {SPOTIFY_GREEN};
+            }}
+            QProgressBar {{
+                background: #333;
+                border: none;
+            }}
+        """)
+
+        root = QVBoxLayout()
+        root.addLayout(layout)
+        root.addWidget(self.progress)
+
+        self.setLayout(root)
+        self.setStyleSheet(f"background-color: {ROW_BG}; border-radius: 4px;")
+
+    def set_progress(self, value):
+        self.progress.setValue(value)
 
     def enterEvent(self, event):
-        self.setStyleSheet(f"background-color: {ROW_HOVER};")
-        super().enterEvent(event)
-
+        self.setStyleSheet(f"background-color: {ROW_HOVER}; border-radius: 4px;")
     def leaveEvent(self, event):
-        self.setStyleSheet(f"background-color: {ROW_BG};")
-        super().leaveEvent(event)
-
-    def on_delete(self):
-        """Call HistoryManager delete function"""
-        self.delete_callback(self.record)
+        self.setStyleSheet(f"background-color: {ROW_BG}; border-radius: 4px;")
 
 
 class HistoryTab(QWidget):
@@ -110,78 +120,87 @@ class HistoryTab(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
 
-        # ----------------------------
         # Search bar
-        # ----------------------------
         search_row = QHBoxLayout()
-        self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Search history...")
-        self.search_box.textChanged.connect(self.refresh)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search...")
+        self.search.textChanged.connect(self.refresh)
+        search_row.addWidget(self.search)
 
         btn_clear = QPushButton("Clear All")
         btn_clear.clicked.connect(self.clear_all)
-
-        search_row.addWidget(self.search_box)
         search_row.addWidget(btn_clear)
 
         layout.addLayout(search_row)
 
-        # ----------------------------
-        # List widget
-        # ----------------------------
+        # List
         self.list = QListWidget()
+        self.list.setSpacing(4)
         layout.addWidget(self.list)
 
         self.setLayout(layout)
 
+        # LIVE PROGRESS EVENT LISTENERS
+        event_bus.progress_updated.connect(self.on_progress)
+        event_bus.conversion_finished.connect(self.on_finished)
+
+        self.rows = {}  # flac_path → HistoryRow
         self.refresh()
 
-    # --------------------------------------------------------------
+    # --------------------------------------------------------
     def refresh(self):
-        """Reloads history list."""
-        text = self.search_box.text().lower()
-        self.list.clear()
+        """Reload history list from DB."""
+        query = self.search.text().lower()
 
         records = self.manager.load_all()
-        self.full_records = records
+
+        self.list.clear()
+        self.rows.clear()
 
         for rec in records:
-            if text and text not in rec["flac"].lower():
+            if query and query not in rec["flac"].lower():
                 continue
 
-            row = HistoryRow(rec, self.delete_single)
-
+            row = HistoryRow(rec, self.delete_one)
             item = QListWidgetItem(self.list)
             item.setSizeHint(row.sizeHint())
+
             self.list.addItem(item)
             self.list.setItemWidget(item, row)
 
-    # --------------------------------------------------------------
-    def delete_single(self, record):
-        """Delete one entry from history.json"""
+            # Link for live updates
+            self.rows[rec["flac"]] = row
+
+    # --------------------------------------------------------
+    def on_progress(self, flac_path, percent):
+        """Update row progress bar."""
+        row = self.rows.get(flac_path)
+        if row:
+            row.set_progress(percent)
+
+    def on_finished(self, flac_path, success):
+        row = self.rows.get(flac_path)
+        if row:
+            row.set_progress(100)
+
+    # --------------------------------------------------------
+    def delete_one(self, row_id):
         confirm = QMessageBox.question(
-            self, "Delete Entry",
-            f"Remove this entry:\n\n{record['flac']}?",
+            self, "Delete Entry", "Remove this item from history?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
+        if confirm == QMessageBox.StandardButton.Yes:
+            self.manager.delete(row_id)
+            self.refresh()
 
-        records = self.manager.load_all()
-        new_list = [r for r in records if r != record]
-        self.manager._save(new_list)
-
-        self.refresh()
-
-    # --------------------------------------------------------------
+    # --------------------------------------------------------
     def clear_all(self):
         confirm = QMessageBox.question(
             self, "Clear All History",
-            "Are you sure you want to delete ALL history?",
+            "Delete ALL history entries?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-
         if confirm == QMessageBox.StandardButton.Yes:
             self.manager.clear()
             self.refresh()
