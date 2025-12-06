@@ -4,29 +4,27 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from utils.settings_manager import SettingsManager
-
 
 class SettingsTab(QWidget):
 
-    def __init__(self, settings):
+    def __init__(self, settings: dict):
         super().__init__()
 
-        self.manager = SettingsManager()
-        self.settings = self.manager.settings  # local reference
+        # Shared global settings dictionary passed from MainWindow
+        self.settings = settings
 
         layout = QVBoxLayout()
 
-        # ---------------------------
+        # ----------------------------------------------------------
         # Delete Originals
-        # ---------------------------
+        # ----------------------------------------------------------
         self.chk_delete = QCheckBox("Delete original FLAC files after conversion")
         self.chk_delete.setChecked(self.settings.get("delete_originals", False))
         layout.addWidget(self.chk_delete)
 
-        # ---------------------------
+        # ----------------------------------------------------------
         # Performance Mode
-        # ---------------------------
+        # ----------------------------------------------------------
         perf_row = QHBoxLayout()
         perf_label = QLabel("Performance Mode:")
         self.combo_perf = QComboBox()
@@ -39,34 +37,34 @@ class SettingsTab(QWidget):
         perf_row.addWidget(self.combo_perf)
         layout.addLayout(perf_row)
 
-        # ---------------------------
+        # ----------------------------------------------------------
         # Custom Thread Count
-        # ---------------------------
+        # ----------------------------------------------------------
         threads_row = QHBoxLayout()
         threads_label = QLabel("Custom Thread Count:")
         self.spin_threads = QSpinBox()
         self.spin_threads.setRange(1, 128)
-        self.spin_threads.setEnabled(current_perf == "custom")
 
         override = self.settings.get("threads_override")
         if override:
             self.spin_threads.setValue(int(override))
 
+        self.spin_threads.setEnabled(current_perf == "custom")
+
         threads_row.addWidget(threads_label)
         threads_row.addWidget(self.spin_threads)
         layout.addLayout(threads_row)
 
-        # Change enable state when performance mode switches
+        # Enable only when "custom" is selected
         self.combo_perf.currentTextChanged.connect(
-            lambda x: self.spin_threads.setEnabled(x == "custom")
+            lambda mode: self.spin_threads.setEnabled(mode == "custom")
         )
 
-        # ---------------------------
-        # Save + Reset Buttons
-        # ---------------------------
+        # ----------------------------------------------------------
+        # Save + Reset
+        # ----------------------------------------------------------
         btn_save = QPushButton("Save Settings")
         btn_reset = QPushButton("Restore Defaults")
-
         layout.addWidget(btn_save)
         layout.addWidget(btn_reset)
 
@@ -76,9 +74,11 @@ class SettingsTab(QWidget):
         layout.addStretch()
         self.setLayout(layout)
 
-    # ---------------------------------------------------------------------
+    # ==============================================================
+    # SAVE SETTINGS
+    # ==============================================================
     def save_settings(self):
-        """Save settings to disk."""
+
         self.settings["delete_originals"] = self.chk_delete.isChecked()
         self.settings["performance_mode"] = self.combo_perf.currentText()
 
@@ -87,23 +87,25 @@ class SettingsTab(QWidget):
         else:
             self.settings["threads_override"] = None
 
-        self.manager.save()
-
         QMessageBox.information(self, "Settings Saved", "Settings have been updated.")
+        print("Settings updated ->", self.settings)
 
-    # ---------------------------------------------------------------------
+    # ==============================================================
+    # RESET SETTINGS
+    # ==============================================================
     def reset_settings(self):
-        """Restore default settings."""
+
         if QMessageBox.question(
             self, "Reset Settings", "Restore default settings?"
         ) != QMessageBox.StandardButton.Yes:
             return
 
-        default = self.manager.default_settings()
-        self.manager.save(default)
-        self.settings = default
+        # Defaults
+        self.settings["delete_originals"] = False
+        self.settings["performance_mode"] = "balanced"
+        self.settings["threads_override"] = None
 
-        # Refresh UI
+        # Update UI
         self.chk_delete.setChecked(False)
         self.combo_perf.setCurrentText("balanced")
         self.spin_threads.setValue(4)
