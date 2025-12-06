@@ -9,14 +9,10 @@ class HistoryManager:
     def __init__(self):
         self._init_db()
 
-    # ----------------------------------------------------------
-    # Initialize DB
-    # ----------------------------------------------------------
     def _init_db(self):
         conn = sqlite3.connect(HISTORY_DB)
         cur = conn.cursor()
-        cur.execute(
-            """
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 flac_path TEXT,
@@ -28,19 +24,14 @@ class HistoryManager:
                 size_after INTEGER,
                 date TEXT
             )
-            """
-        )
+        """)
         conn.commit()
         conn.close()
 
-    # ----------------------------------------------------------
-    # Add one conversion record
-    # ----------------------------------------------------------
     def add_record(self, flac, alac, metadata, size_before, size_after):
         conn = sqlite3.connect(HISTORY_DB)
         cur = conn.cursor()
-        cur.execute(
-            """
+        cur.execute("""
             INSERT INTO history (
                 flac_path, alac_path, artist, album, title,
                 size_before, size_after, date
@@ -48,8 +39,7 @@ class HistoryManager:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                flac,
-                alac,
+                flac, alac,
                 metadata.get("ARTIST", "Unknown"),
                 metadata.get("ALBUM", "Unknown"),
                 metadata.get("TITLE", "Unknown"),
@@ -61,9 +51,6 @@ class HistoryManager:
         conn.commit()
         conn.close()
 
-    # ----------------------------------------------------------
-    # Load all rows (newest first)
-    # ----------------------------------------------------------
     def load_all(self):
         conn = sqlite3.connect(HISTORY_DB)
         cur = conn.cursor()
@@ -71,7 +58,6 @@ class HistoryManager:
         rows = cur.fetchall()
         conn.close()
 
-        # Convert to dicts so UI is same as before
         results = []
         for r in rows:
             results.append({
@@ -87,9 +73,6 @@ class HistoryManager:
             })
         return results
 
-    # ----------------------------------------------------------
-    # Delete single entry
-    # ----------------------------------------------------------
     def delete(self, row_id):
         conn = sqlite3.connect(HISTORY_DB)
         cur = conn.cursor()
@@ -97,12 +80,18 @@ class HistoryManager:
         conn.commit()
         conn.close()
 
-    # ----------------------------------------------------------
-    # Clear all
-    # ----------------------------------------------------------
     def clear(self):
         conn = sqlite3.connect(HISTORY_DB)
         cur = conn.cursor()
         cur.execute("DELETE FROM history")
         conn.commit()
         conn.close()
+
+    # NEW: used by ConvertTab to skip files already converted
+    def get_all_flac_paths(self):
+        conn = sqlite3.connect(HISTORY_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT flac_path FROM history")
+        rows = cur.fetchall()
+        conn.close()
+        return [r[0] for r in rows]

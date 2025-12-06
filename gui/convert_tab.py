@@ -111,7 +111,13 @@ class ConvertTab(QWidget):
             history_manager=self.history_manager
         )
 
-        flac_files = self.manager.scan_for_flac(folders)
+        # NEW — skip files already converted
+        already_done = set(self.history_manager.get_all_flac_paths())
+
+        flac_files = [
+            f for f in self.manager.scan_for_flac(folders)
+            if str(f) not in already_done
+        ]
 
         self.file_list.clear()
         self.progress_items = {}
@@ -131,7 +137,7 @@ class ConvertTab(QWidget):
         if flac_files:
             self.btn_convert.setEnabled(True)
         else:
-            QMessageBox.information(self, "No Files", "No FLAC files found.")
+            QMessageBox.information(self, "No Files", "No new FLAC files found.")
 
     # ======================================================================
     # START CONVERSION
@@ -156,7 +162,6 @@ class ConvertTab(QWidget):
     def start_next_batch(self):
         if not self.pending:
             # all files done
-            self.scan_files()  # auto-refresh
             return
 
         running = sum(

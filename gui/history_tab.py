@@ -6,15 +6,14 @@ from PyQt6.QtCore import Qt
 
 from core.history_manager import HistoryManager
 from core.event_bus import event_bus
-
 import os
 
-
+# Colors
 SPOTIFY_GREEN = "#1DB954"
-ROW_BG = "#1A1A1A"
-ROW_HOVER = "#222222"
-TEXT = "#FFFFFF"
-SUBTEXT = "#999999"
+ROW_BG = "#1F1F1F"
+ROW_HOVER = "#2A2A2A"
+TEXT = "#E6E6E6"
+SUBTEXT = "#A0A0A0"
 
 
 class HistoryRow(QWidget):
@@ -23,25 +22,25 @@ class HistoryRow(QWidget):
         self.record = record
         self.delete_callback = delete_callback
 
-        self.setFixedHeight(36)
+        self.setFixedHeight(55)
 
         layout = QHBoxLayout()
-        layout.setContentsMargins(6, 2, 6, 2)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(12)
 
-        # Small 32px thumbnail placeholder
+        # Thumbnail placeholder
         thumb = QLabel()
-        thumb.setFixedSize(32, 32)
-        thumb.setStyleSheet("background-color: #333; border-radius: 4px;")
+        thumb.setFixedSize(40, 40)
+        thumb.setStyleSheet("background-color: #333; border-radius: 6px;")
         layout.addWidget(thumb)
 
-        # Title + artist inline
+        # Title + artist
         text_col = QVBoxLayout()
         title = QLabel(os.path.basename(record["flac"]))
-        title.setStyleSheet(f"color: {TEXT}; font-size: 13px; font-weight: bold;")
+        title.setStyleSheet(f"color: {TEXT}; font-size: 15px; font-weight: bold;")
 
         sub = QLabel(f"{record['artist']} — {record['album']}")
-        sub.setStyleSheet(f"color: {SUBTEXT}; font-size: 11px;")
+        sub.setStyleSheet(f"color: {SUBTEXT}; font-size: 13px;")
 
         text_col.addWidget(title)
         text_col.addWidget(sub)
@@ -52,45 +51,45 @@ class HistoryRow(QWidget):
         after_mb = record["size_after"] / (1024 * 1024)
 
         size_label = QLabel(f"{before_mb:.1f} → {after_mb:.1f} MB")
-        size_label.setStyleSheet(f"color: {TEXT}; font-size: 12px;")
+        size_label.setStyleSheet(f"color: {TEXT}; font-size: 13px;")
         layout.addWidget(size_label)
 
         # Date
         date_label = QLabel(record["date"])
-        date_label.setStyleSheet(f"color: {SUBTEXT}; font-size: 11px;")
+        date_label.setStyleSheet(f"color: {SUBTEXT}; font-size: 12px;")
         layout.addWidget(date_label)
 
         # Delete
         btn_delete = QPushButton("✕")
-        btn_delete.setFixedWidth(28)
+        btn_delete.setFixedWidth(30)
         btn_delete.clicked.connect(lambda: delete_callback(record["id"]))
-        btn_delete.setStyleSheet(
-            """
+        btn_delete.setStyleSheet("""
             QPushButton {
-                background: #7A0000;
+                background: #992222;
                 color: white;
-                border: none;
-                border-radius: 4px;
+                font-size: 15px;
+                border-radius: 5px;
                 font-weight: bold;
             }
-            QPushButton:hover { background: #AA0000; }
-            """
-        )
+            QPushButton:hover { background: #CC2222; }
+        """)
         layout.addWidget(btn_delete)
 
-        # Progress bar (hidden until conversion update)
+        # Progress bar
         self.progress = QProgressBar()
-        self.progress.setFixedHeight(4)
+        self.progress.setFixedHeight(6)
         self.progress.setRange(0, 100)
-        self.progress.setValue(100)  # default done
+        self.progress.setValue(100)
         self.progress.setTextVisible(False)
         self.progress.setStyleSheet(f"""
-            QProgressBar::chunk {{
-                background-color: {SPOTIFY_GREEN};
-            }}
             QProgressBar {{
                 background: #333;
                 border: none;
+                border-radius: 3px;
+            }}
+            QProgressBar::chunk {{
+                background-color: {SPOTIFY_GREEN};
+                border-radius: 3px;
             }}
         """)
 
@@ -99,19 +98,18 @@ class HistoryRow(QWidget):
         root.addWidget(self.progress)
 
         self.setLayout(root)
-        self.setStyleSheet(f"background-color: {ROW_BG}; border-radius: 4px;")
+        self.setStyleSheet(f"background-color: {ROW_BG}; border-radius: 6px;")
 
     def set_progress(self, value):
         self.progress.setValue(value)
 
     def enterEvent(self, event):
-        self.setStyleSheet(f"background-color: {ROW_HOVER}; border-radius: 4px;")
+        self.setStyleSheet(f"background-color: {ROW_HOVER}; border-radius: 6px;")
     def leaveEvent(self, event):
-        self.setStyleSheet(f"background-color: {ROW_BG}; border-radius: 4px;")
+        self.setStyleSheet(f"background-color: {ROW_BG}; border-radius: 6px;")
 
 
 class HistoryTab(QWidget):
-
     def __init__(self):
         super().__init__()
 
@@ -120,12 +118,16 @@ class HistoryTab(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
 
-        # Search bar
+        # Search bar + buttons
         search_row = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search...")
+        self.search.setPlaceholderText("Search history...")
         self.search.textChanged.connect(self.refresh)
         search_row.addWidget(self.search)
+
+        btn_refresh = QPushButton("Refresh")
+        btn_refresh.clicked.connect(self.refresh)
+        search_row.addWidget(btn_refresh)
 
         btn_clear = QPushButton("Clear All")
         btn_clear.clicked.connect(self.clear_all)
@@ -135,16 +137,16 @@ class HistoryTab(QWidget):
 
         # List
         self.list = QListWidget()
-        self.list.setSpacing(4)
+        self.list.setSpacing(6)
         layout.addWidget(self.list)
 
         self.setLayout(layout)
 
-        # LIVE PROGRESS EVENT LISTENERS
+        # Progress listeners (live updates for currently converting)
         event_bus.progress_updated.connect(self.on_progress)
         event_bus.conversion_finished.connect(self.on_finished)
 
-        self.rows = {}  # flac_path → HistoryRow
+        self.rows = {}
         self.refresh()
 
     # --------------------------------------------------------
@@ -168,12 +170,10 @@ class HistoryTab(QWidget):
             self.list.addItem(item)
             self.list.setItemWidget(item, row)
 
-            # Link for live updates
             self.rows[rec["flac"]] = row
 
     # --------------------------------------------------------
     def on_progress(self, flac_path, percent):
-        """Update row progress bar."""
         row = self.rows.get(flac_path)
         if row:
             row.set_progress(percent)
@@ -186,7 +186,7 @@ class HistoryTab(QWidget):
     # --------------------------------------------------------
     def delete_one(self, row_id):
         confirm = QMessageBox.question(
-            self, "Delete Entry", "Remove this item from history?",
+            self, "Delete Entry", "Remove this history item?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
 
