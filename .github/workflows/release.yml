@@ -1,0 +1,58 @@
+name: Build & Release VibesFLAC
+
+on:
+  push:
+    tags:
+      - 'v*'   # triggers when you push tags like v1.0.0
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install Python dependencies
+      run: |
+        pip install pyinstaller
+
+    - name: Build Python EXE (PyInstaller)
+      run: |
+        pyinstaller --noconfirm VibesFLACtoALAC.spec
+
+    - name: Install NSIS
+      run: |
+        choco install nsis -y
+
+    - name: Build NSIS installer
+      run: |
+        makensis VibesFLAC_Installer.nsi
+
+    - name: Upload EXE artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: installer
+        path: VibesFLAC-Setup-*.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Download installer artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: installer
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: VibesFLAC-Setup-*.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
