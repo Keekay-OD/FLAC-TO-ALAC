@@ -1,0 +1,208 @@
+Absolutely — here is a **clean, modern, promo-ready README.md** tailored for GitHub.
+It is structured, has headings where you can drop your images, and promotes your app professionally.
+
+You can **copy/paste**, and I can customize branding, colors, taglines, or add badges if you want.
+
+---
+
+# 🎵 **Vibes FLAC → ALAC Converter**
+
+### *Ultra-fast, multi-threaded audio converter with a beautiful Discord-style UI*
+
+> Convert entire music libraries from **FLAC** to **Apple ALAC (.m4a)** with metadata + album art preserved — fully parallelized with live progress bars, file-change detection, resume support, and automatic history logging.
+
+---
+
+# 📸 Screenshots
+
+> *(Add your images here)*
+> Example:
+
+```
+![Convert Screen](images/convert.png)
+![History Screen](images/history.png)
+![Settings Screen](images/settings.png)
+```
+
+---
+
+# ✨ Features
+
+### ⚡ **Multi-Threaded FFmpeg Engine**
+
+* Uses a custom thread pool
+* Converts **16 files at once** (or your CPU limit)
+* Auto-queues the next batch until all files are finished
+
+### 🎧 **Perfect FLAC → ALAC Conversion**
+
+* Lossless ALAC encoder
+* Preserves:
+
+  * Title
+  * Artist
+  * Album
+  * Track number
+  * Disc number
+  * Genre
+  * Year/date
+  * Composer
+  * Album Art
+
+### 🧠 **Smart File Detection (Never Convert Twice)**
+
+* Automatically checks:
+
+  * File size
+  * Modified timestamp
+* Skips already-converted files instantly
+* Resume conversion even after restarting the app
+
+### 📂 **Folder Watch + Queue System**
+
+* Add unlimited music folders
+* Saves folder list automatically
+* One-click “Scan & Queue”
+* Visual list of all found FLAC files
+
+### 🎛 **Beautiful Discord-Inspired UI**
+
+* Dark mode
+* Accent colors styled after Discord
+* Smooth live progress bars
+* Clean, readable history list
+
+### 🗃 **History Tab**
+
+* Logs every conversion with:
+
+  * File name
+  * Artist
+  * Album
+  * Size before → after
+  * Time converted
+* Delete single entries
+* Clear entire history
+
+### 🔧 **Settings**
+
+* Delete original FLAC files after conversion
+* CPU performance mode:
+
+  * **Safe**
+  * **Balanced**
+  * **Max**
+  * **Custom thread count**
+* Saves automatically to `settings.json`
+
+---
+
+# 🚀 Installation
+
+### **1. Install Python 3.11 or 3.13**
+
+[https://www.python.org/downloads/](https://www.python.org/downloads/)
+
+Check:
+
+```bash
+python --version
+```
+
+---
+
+### **2. Install dependencies**
+
+Inside the project folder:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+### **3. Install FFmpeg**
+
+You *must* have FFmpeg installed and added to PATH:
+
+Windows (recommended):
+[https://www.gyan.dev/ffmpeg/builds/](https://www.gyan.dev/ffmpeg/builds/)
+
+Test:
+
+```bash
+ffmpeg -version
+```
+
+---
+
+### **4. Run the App**
+
+```bash
+python main.py
+```
+
+---
+
+# 📁 Project Structure
+
+```
+VibesFlacToAlac/
+│
+├─ gui/
+│   ├─ convert_tab.py
+│   ├─ history_tab.py
+│   ├─ settings_tab.py
+│   └─ components/
+│
+├─ core/
+│   ├─ converter.py
+│   ├─ ffmpeg_progress.py
+│   ├─ metadata.py
+│   └─ threads.py
+│
+├─ utils/
+│   ├─ paths.py
+│   └─ settings.json
+│
+├─ main.py
+└─ README.md
+```
+
+---
+
+# 🔥 Why This App?
+
+Because almost every FLAC→ALAC converter is either:
+
+❌ command-line only
+❌ old & ugly
+❌ converts one file at a time
+❌ doesn’t preserve album art
+❌ doesn’t support multi-threading
+❌ doesn’t skip already-converted files
+
+**This tool fixes all of that.**
+Fast, beautiful, and ridiculously easy to use.
+
+---
+
+# 💬 Contributing
+
+Pull requests and suggestions are welcome!
+If you find a bug or want a new feature, open an issue.
+
+---
+
+# ⭐ Support the Project
+
+If this app saved you time — consider starring the repo ⭐
+It helps the project grow and stay active.
+
+---
+
+# 🔗 License
+
+MIT License — free for personal & commercial use.
+
+---

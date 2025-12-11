@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>VibesFlac Update Feed</title>
+    <link>https://github.com/Keekay-OD/FLAC-TO-ALAC</link>
+    <description>Auto updates for Vibes FLAC to ALAC</description>
+
+    <item>
+      <title>Version 1.0.0</title>
+      <sparkle:releaseNotesLink>
+        https://github.com/Keekay-OD/FLAC-TO-ALAC/releases/tag/v1.0.0
+      </sparkle:releaseNotesLink>
+
+      <enclosure
+         url="https://github.com/Keekay-OD/FLAC-TO-ALAC/releases/download/v1.0.0/VibesFlacInstaller.exe"
+         sparkle:version="1.0.0"
+         length="0"
+         type="application/octet-stream" />
+    </item>
+
+  </channel>
+</rss>
