@@ -7,3 +7,7 @@ appdata/resume.json
 appdata/history.db
 appdata/resume.json
 appdata/history.db-journal
+build/
+build/*
+dist/
+dist/*

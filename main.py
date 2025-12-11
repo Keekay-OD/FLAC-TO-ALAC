@@ -7,11 +7,10 @@ from PyQt6.QtGui import QIcon
 
 from gui.main_window import MainWindow
 from utils.paths import ensure_app_folders, SETTINGS_FILE
-
+from utils.update_checker import check_for_updates
 
 APP_NAME = "Vibes FLAC → ALAC Converter"
 APP_VERSION = "1.0.0"
-
 
 DEFAULT_SETTINGS = {
     "delete_originals": False,
@@ -21,31 +20,22 @@ DEFAULT_SETTINGS = {
     "dark_mode": True
 }
 
-
 def load_settings():
-    """Load settings file or restore defaults if corrupted."""
     if not SETTINGS_FILE.exists():
         SETTINGS_FILE.write_text(json.dumps(DEFAULT_SETTINGS, indent=4))
         return DEFAULT_SETTINGS.copy()
 
     try:
         data = json.loads(SETTINGS_FILE.read_text())
-
-        # Ensure missing keys get default values
         for k, v in DEFAULT_SETTINGS.items():
             if k not in data:
                 data[k] = v
-
         return data
-
     except Exception:
-        # Auto-repair damaged settings file
         SETTINGS_FILE.write_text(json.dumps(DEFAULT_SETTINGS, indent=4))
         return DEFAULT_SETTINGS.copy()
 
-
 def apply_dark_theme(app: QApplication):
-    """Apply a modern dark mode theme."""
     DARK_STYLE = """
     QWidget {
         background-color: #1E1E1E;
@@ -90,27 +80,25 @@ def apply_dark_theme(app: QApplication):
         background: #444;
     }
     """
-
     app.setStyleSheet(DARK_STYLE)
 
-
 def main():
-    """Main application startup."""
-    ensure_app_folders()  # MUST run first
+    ensure_app_folders()
 
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
 
     apply_dark_theme(app)
-
     settings = load_settings()
 
     window = MainWindow(settings)
     window.show()
 
-    sys.exit(app.exec())
+    # Optional: GitHub update checker you already built
+    check_for_updates(window)
 
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
